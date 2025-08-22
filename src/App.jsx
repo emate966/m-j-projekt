@@ -84,15 +84,15 @@ const TRANSLATIONS = {
     how_title: "Jak to działa",
     how_steps: [
       "Wybierz pakiet i dodaj do koszyka",
-      "Prześlij zdjęcia i opis (strój, poza, dodatki)",
-      "Zatwierdź wizualizację, a my tworzymy figurkę",
+      "Prześlij zdjęcia i opis (model, dodatki)",
+      "Dostaniesz darmową wizualizację. Płacisz dopiero po akceptacji.",
       "Odbierz przesyłkę i uśmiech :)",
     ],
     gallery: "Inspiracje i realizacje",
     offer: "Wybierz pakiet",
     add_to_cart: "Dodaj do koszyka",
     qty: "Ilość",
-    upload_ref: "Zdjęcia referencyjne (max 5)",
+    // upload_ref: "Zdjęcia referencyjne (max 5)",
     notes: "Dodatkowe informacje",
     cart: "Koszyk",
     empty_cart: "Twój koszyk jest pusty",
@@ -103,7 +103,7 @@ const TRANSLATIONS = {
     email: "E-mail",
     phone: "Telefon",
     address: "Adres dostawy",
-    pay_info: "Po złożeniu zamówienia otrzymasz e-mail z linkiem do wizualizacji i płatności online.",
+    pay_info: "Po złożeniu zamówienia otrzymasz e-mail z linkiem do wizualizacji. Zwykle trwa to 2 dni robocze",
     language: "Język",
     size: "Rozmiar",
     turnaround: "Czas realizacji",
@@ -265,11 +265,18 @@ function ProductCard({ p, t, onAdd }) {
   const [bobble, setBobble] = useState(false); // Kiwająca głowa
   const [qty, setQty] = useState(1);
 
+  // ile osób dla wyceny (STANDARD = 2, MINI = 1, PREMIUM = wybór)
+  const personsCount = isPremium ? persons : (p.id === "standard" ? 2 : 1);
+
   // dopłaty
   const sizeSurcharge = sizeCm === "18" ? 40 : sizeCm === "23" ? 80 : 0;
   const basePrice = isPremium ? 550 : p.price;
   const personsSurcharge = isPremium ? Math.max(0, persons - 3) * 150 : 0;
-  const bobbleSurcharge = bobble ? 50 : 0;
+
+  // ZMIANA: bobble per osoba dla STANDARD i PREMIUM; w MINI stałe 50 zł
+  const bobbleSurcharge = bobble
+    ? (p.id === "standard" || isPremium ? 50 * personsCount : 50)
+    : 0;
 
   // ceny
   const dynamicPrice = basePrice + sizeSurcharge + personsSurcharge + bobbleSurcharge; // za 1 szt.
@@ -286,7 +293,7 @@ function ProductCard({ p, t, onAdd }) {
         </CardTitle>
       </CardHeader>
 
-  <CardContent className="flex h-full flex-col pb-5">
+      <CardContent className="flex h-full flex-col pb-5">
         <img src={p.image} alt={p.name} className="rounded-xl w-full h-56 object-cover mb-4" />
 
         {/* WYBÓR OPCJI */}
@@ -336,7 +343,11 @@ function ProductCard({ p, t, onAdd }) {
               checked={bobble}
               onChange={(e) => setBobble(e.target.checked)}
             />
-            <span>Kiwająca głowa (+50 zł)</span>
+            <span>
+              {p.id === "standard" || isPremium
+                ? "Kiwająca głowa (+50 zł / osoba)"
+                : "Kiwająca głowa (+50 zł)"}
+            </span>
           </label>
 
           {/* Czas realizacji */}
@@ -356,7 +367,7 @@ function ProductCard({ p, t, onAdd }) {
         </div>
 
         {/* CENA + DODAJ */}
-          <div className="mt-auto mb-2 flex items-end justify-between gap-3">
+        <div className="mt-auto mb-2 flex items-end justify-between gap-3">
           <div className="flex-1 min-w-0 space-y-1">
             {/* łączna cena pozycji */}
             <div className="text-2xl font-extrabold">{currency(totalPrice)}</div>
@@ -421,32 +432,305 @@ function Gallery({ t }) {
   );
 }
 
-function OrderForm({ t }) {
+function OrderForm({ t, cart }) {
+  const [files, setFiles] = React.useState([]);
+  const [previews, setPreviews] = React.useState([]);
+  const [notes, setNotes] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [address, setAddress] = React.useState("");
+
+  const [filesError, setFilesError] = React.useState("");
+  const [notesError, setNotesError] = React.useState("");
+  const [emailError, setEmailError] = React.useState("");
+  const [phoneError, setPhoneError] = React.useState("");
+  const [isDragging, setIsDragging] = React.useState(false);
+
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState(0);
+  const [serverError, setServerError] = React.useState("");
+  const [serverSuccess, setServerSuccess] = React.useState("");
+
+  const fileInputRef = React.useRef(null);
+
+  // ===== Walidacje =====
+  function validateFilesCount(count) {
+    if (count < 1) { setFilesError("Dodaj przynajmniej 1 zdjęcie."); return false; }
+    if (count > 30) { setFilesError("Możesz dodać maksymalnie 30 zdjęć."); return false; }
+    setFilesError(""); return true;
+  }
+  function validateNotes(value) {
+    const ok = value.trim().length >= 20;
+    setNotesError(ok ? "" : "Opisz szczegóły — minimum 20 znaków.");
+    return ok;
+  }
+  function validateEmail(value) {
+    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
+    setEmailError(ok ? "" : "Podaj poprawny adres e-mail."); return ok;
+  }
+  const digitsOnly = (s) => (s || "").replace(/\D+/g, "");
+  function formatPLPhoneDisplay(raw) {
+    const all = digitsOnly(raw);
+    let hasCC = false, local = all;
+    if (all.startsWith("0048")) { hasCC = true; local = all.slice(4); }
+    else if (all.startsWith("48") && all.length >= 11) { hasCC = true; local = all.slice(2); }
+    const grouped = local.slice(0, 9).replace(/(\d{3})(?=\d)/g, "$1 ").trim();
+    return hasCC ? `+48 ${grouped}` : grouped;
+  }
+  function validatePhone(raw) {
+    const all = digitsOnly(raw);
+    let local = all;
+    if (all.startsWith("0048")) local = all.slice(4);
+    else if (all.startsWith("48") && all.length >= 11) local = all.slice(2);
+    const ok = local.length === 9;
+    setPhoneError(ok ? "" : "Podaj polski numer: 9 cyfr lub +48 i 9 cyfr.");
+    return ok;
+  }
+  function handlePhoneChange(e) {
+    const val = e.target.value.replace(/[^\d+ ]+/g, "");
+    setPhone(formatPLPhoneDisplay(val));
+  }
+
+  // ===== Pliki =====
+  const makeKey = (f) => `${f.name}|${f.size}|${f.lastModified}`;
+  const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+  const ALLOWED_EXT = new Set(["jpg", "jpeg", "png", "webp"]);
+  const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+
+  function processFiles(incoming) {
+    const existingKeys = new Set(files.map(makeKey));
+    const tooLarge = [], wrongType = [];
+    const filtered = [];
+
+    for (const f of incoming) {
+      const ext = (f.name.split(".").pop() || "").toLowerCase();
+      const okType = ALLOWED_MIME.has(f.type) || ALLOWED_EXT.has(ext);
+      const okSize = f.size <= MAX_SIZE;
+      if (!okType) { wrongType.push(f.name); continue; }
+      if (!okSize) { tooLarge.push(f.name); continue; }
+      if (existingKeys.has(makeKey(f))) continue;
+      filtered.push(f);
+    }
+
+    let next = [...files, ...filtered];
+    if (next.length > 30) next = next.slice(0, 30);
+    setFiles(next);
+
+    const msgs = [];
+    if (wrongType.length) msgs.push("Dozwolone typy: JPG, PNG, WEBP. Pominięte: " + wrongType.join(", "));
+    if (tooLarge.length) msgs.push("Za duży plik (>10 MB): " + tooLarge.join(", "));
+    setFilesError(msgs.join(" "));
+    validateFilesCount(next.length);
+  }
+
+  function handleFilesChange(e) {
+    const picked = Array.from(e.target.files || []);
+    if (!picked.length) return;
+    processFiles(picked);
+    e.target.value = "";
+  }
+  function removeFile(idx) {
+    const next = files.filter((_, i) => i !== idx);
+    setFiles(next); validateFilesCount(next.length);
+  }
+
+  // Drag & Drop
+  function handleDragOver(e) { e.preventDefault(); setIsDragging(true); }
+  function handleDragLeave(e) { e.preventDefault(); setIsDragging(false); }
+  function handleDrop(e) { e.preventDefault(); setIsDragging(false);
+    const dropped = Array.from(e.dataTransfer?.files || []); if (dropped.length) processFiles(dropped);
+  }
+  function handleOpenFileDialog() { fileInputRef.current?.click(); }
+
+  // Miniatury
+  React.useEffect(() => {
+    const next = files.map((f) => ({ file: f, url: URL.createObjectURL(f) }));
+    setPreviews((prev) => { prev.forEach((p) => URL.revokeObjectURL(p.url)); return next; });
+    return () => { next.forEach((p) => URL.revokeObjectURL(p.url)); };
+  }, [files]);
+
+  // ===== Submit: XHR + progress =====
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setServerError(""); setServerSuccess("");
+
+    const okFiles = validateFilesCount(files.length);
+    const okNotes = validateNotes(notes);
+    const okEmail = validateEmail(email);
+    const okPhone = validatePhone(phone);
+    if (!okFiles || !okNotes || !okEmail || !okPhone) {
+      const anchorId = !okFiles ? "upload-block" : !okNotes ? "notes-block" : !okEmail ? "email-field" : "phone-field";
+      document.getElementById(anchorId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append("name", name);
+    fd.append("email", email);
+    fd.append("phone", phone);
+    fd.append("address", address);
+    fd.append("notes", notes);
+    files.forEach((f) => fd.append("photos", f, f.name));
+    if (Array.isArray(cart) && cart.length) fd.append("cart", JSON.stringify(cart));
+
+    setIsSubmitting(true);
+    setUploadProgress(0);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "http://localhost:4000/api/orders");
+      xhr.open("POST", `${import.meta.env.VITE_API_URL}/api/orders`);
+
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+      };
+      xhr.onerror = () => {
+        setServerError("Problem z połączeniem. Spróbuj ponownie.");
+        setIsSubmitting(false);
+      };
+      xhr.onload = () => {
+        setIsSubmitting(false);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setServerSuccess("Dziękujemy! Zamówienie zostało przesłane. Sprawdź e-mail.");
+          // reset (opcjonalnie)
+          setFiles([]); setPreviews([]); setNotes(""); setName(""); setEmail(""); setPhone(""); setAddress("");
+          setUploadProgress(0);
+        } else {
+          setServerError(`Błąd serwera (${xhr.status}). Spróbuj ponownie.`);
+        }
+      };
+      xhr.send(fd);
+    } catch (err) {
+      setIsSubmitting(false);
+      setServerError("Nie udało się wysłać zamówienia.");
+    }
+  }
+
   return (
     <section id="order" className="py-12">
-      <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><ImageIcon className="w-6 h-6"/> {t.customer_data}</h2>
-      <form className="grid md:grid-cols-2 gap-6">
-        <Card><CardContent className="p-5 space-y-4">
-          <div>
-            <Label>{t.name}</Label>
-            <Input required />
-          </div>
-          <div>
-            <Label>{t.email}</Label>
-            <Input type="email" required />
-          </div>
-          <div>
-            <Label>{t.address}</Label>
-            <Textarea required />
-          </div>
-        </CardContent></Card>
-        <Card><CardContent className="p-5">
-          <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Podgląd przed produkcją</div>
-          <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/> Darmowa dostawa</div>
-        </CardContent></Card>
-        <div className="md:col-span-2 flex justify-end">
-          <Button type="submit" className={`bg-gradient-to-r ${BRAND.primary} text-white`}>
-            <CreditCard className="w-4 h-4 mr-2"/> {t.checkout}
+      <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+        <ImageIcon className="w-6 h-6" /> {t.customer_data}
+      </h2>
+
+      <form className="grid md:grid-cols-2 gap-6" onSubmit={handleSubmit} noValidate>
+        {/* LEWA kolumna */}
+        <Card>
+          <CardContent className="p-5 space-y-4">
+            <div>
+              <Label>{t.name}</Label>
+              <Input required placeholder="Jan Kowalski" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div id="email-field">
+              <Label>{t.email}</Label>
+              <Input
+                type="email" required placeholder="jan@example.com"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); if (emailError) validateEmail(e.target.value); }}
+                onBlur={(e) => validateEmail(e.target.value)}
+                aria-invalid={!!emailError} aria-describedby={emailError ? "email-error" : undefined}
+              />
+              {emailError && <div id="email-error" className="mt-2 text-sm text-red-600" role="alert">{emailError}</div>}
+            </div>
+            <div id="phone-field">
+              <Label>{t.phone}</Label>
+              <Input
+                type="tel" required placeholder="+48 600 000 000 lub 600 000 000"
+                value={phone} onChange={handlePhoneChange} onBlur={(e) => validatePhone(e.target.value)}
+                aria-invalid={!!phoneError} aria-describedby={phoneError ? "phone-error" : undefined}
+              />
+              {phoneError && <div id="phone-error" className="mt-2 text-sm text-red-600" role="alert">{phoneError}</div>}
+            </div>
+            <div>
+              <Label>{t.address}</Label>
+              <Textarea required placeholder="Ulica, numer, kod pocztowy, miejscowość" value={address} onChange={(e) => setAddress(e.target.value)} />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* PRAWA kolumna */}
+        <Card>
+          <CardContent className="p-5 space-y-5">
+            {/* Checklist */}
+            <div className="space-y-2">
+              <div className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 mt-0.5 text-green-600" /><span>Napisz który pakiet Cię interesuje</span></div>
+              <div className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 mt-0.5 text-green-600" /><span>Dodaj zdjęcia</span></div>
+              <div className="flex items-start gap-2"><CheckCircle2 className="w-4 h-4 mt-0.5 text-green-600" /><span>Zaczekaj na projekt, zwykle trwa to do 2 dni roboczych.</span></div>
+            </div>
+
+            {/* Upload + DnD + miniatury */}
+            <div id="upload-block" className="space-y-3">
+              <input
+                ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp"
+                multiple className="hidden" onChange={handleFilesChange}
+                aria-invalid={!!filesError} aria-describedby={filesError ? "upload-error" : undefined}
+              />
+              <div
+                role="button" tabIndex={0}
+                onClick={handleOpenFileDialog}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleOpenFileDialog()}
+                onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                className={[
+                  "border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition",
+                  isDragging ? "border-blue-500 bg-blue-50" : "border-slate-300 hover:border-slate-400",
+                ].join(" ")}
+              >
+                <p className="font-medium">Przeciągnij i upuść zdjęcia tutaj</p>
+                <p className="text-sm text-slate-600 mt-1">…albo kliknij, aby wybrać z dysku</p>
+                <p className="text-xs text-slate-500 mt-2">Możesz dodać wiele zdjęć naraz. Maksymalnie 30 zdjęć. Dodane: {files.length}/30</p>
+              </div>
+
+              {filesError && <div id="upload-error" className="text-sm text-red-600" role="alert">{filesError}</div>}
+
+              {previews.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {previews.map((p, idx) => (
+                    <div key={idx} className="relative group">
+                      <img src={p.url} alt={`Załącznik ${idx + 1}`} className="w-full h-28 object-cover rounded-lg border" />
+                      <button type="button" onClick={() => removeFile(idx)} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition bg-white/90 border rounded-md px-2 py-1 text-xs" aria-label="Usuń zdjęcie">
+                        Usuń
+                      </button>
+                      <div className="mt-1 text-[11px] text-slate-600 truncate">{files[idx].name}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Opis */}
+            <div id="notes-block">
+              <Label>{t.notes}</Label>
+              <Textarea
+                className="mt-2"
+                placeholder="Opisz jak ma wyglądać Twoja figurka"
+                value={notes}
+                onChange={(e) => { const v = e.target.value; setNotes(v); if (notesError) validateNotes(v); }}
+                onBlur={(e) => validateNotes(e.target.value)}
+                aria-invalid={!!notesError} aria-describedby={notesError ? "notes-error" : undefined}
+              />
+              {notesError && <div id="notes-error" className="mt-2 text-sm text-red-600" role="alert">{notesError}</div>}
+            </div>
+
+            {/* Pasek postępu + komunikaty */}
+            {isSubmitting && (
+              <div className="space-y-2">
+                <div className="text-sm text-slate-600">Wysyłanie… {uploadProgress}%</div>
+                <div className="w-full h-2 rounded bg-slate-200 overflow-hidden">
+                  <div className="h-2 bg-blue-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+                </div>
+              </div>
+            )}
+            {serverSuccess && <div className="text-green-700 text-sm">{serverSuccess}</div>}
+            {serverError && <div className="text-red-600 text-sm">{serverError}</div>}
+          </CardContent>
+        </Card>
+
+        {/* Przycisk wysyłki */}
+        <div className="md:col-span-2 flex flex-col items-end gap-2">
+          <div className="text-sm text-slate-600 mb-1">{t.pay_info}</div>
+          <Button type="submit" disabled={isSubmitting} className={`bg-gradient-to-r ${BRAND.primary} text-white`}>
+            <CreditCard className="w-4 h-4 mr-2" />
+            {isSubmitting ? `Wysyłam… ${uploadProgress}%` : t.checkout}
           </Button>
         </div>
       </form>
@@ -454,47 +738,145 @@ function OrderForm({ t }) {
   );
 }
 
+
+
+
+
 function Cart({ t, cart, subtotal, removeFromCart, updateQty, open, setOpen }) {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent side="right" className="p-0 w-full sm:!max-w-[400px] md:!max-w-[420px]">
         <SheetHeader className="p-4 border-b">
           <div className="flex items-center justify-between">
-            <SheetTitle className="flex items-center gap-2"><ShoppingCart className="w-5 h-5"/> {t.cart}</SheetTitle>
+            <SheetTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5" /> {t.cart}
+            </SheetTitle>
             <Button variant="ghost" onClick={() => setOpen(false)}>✕</Button>
           </div>
         </SheetHeader>
+
         <div className="mt-4 space-y-3 px-4 pb-4">
           {cart.length === 0 ? (
             <div className="text-slate-500 py-10 text-center">{t.empty_cart}</div>
           ) : (
             <div className="space-y-3">
-              {cart.map((item, idx) => (
-                <div key={idx} className="flex gap-3 items-center border rounded-xl p-3">
-                  <img src={item.image} alt={item.title} className="w-16 h-16 rounded object-cover" />
-                  <div className="flex-1">
-                    <div className="font-medium">{item.title}</div>
-                    <div className="text-sm font-semibold">
-                      {currency(item.price * item.qty)}   {/* cena pozycji */}
+              {cart.map((item, idx) => {
+                const isPremium = item.id === "premium";
+                const basePrice = isPremium
+                  ? 550
+                  : (PRODUCTS.find((p) => p.id === item.id)?.price || item.price);
+
+                const sizeSurcharge = item.options.sizeCm === "18"
+                  ? 40
+                  : item.options.sizeCm === "23"
+                  ? 80
+                  : 0;
+
+                const personsCount = isPremium
+                  ? item.options.persons
+                  : item.id === "standard"
+                  ? 2
+                  : 1;
+
+                const personsSurcharge = isPremium
+                  ? Math.max(0, personsCount - 3) * 150
+                  : 0;
+
+                const bobbleSurcharge = item.options.bobble
+                  ? (item.id === "standard" || isPremium ? 50 * personsCount : 50)
+                  : 0;
+
+                const unitPrice =
+                  basePrice + sizeSurcharge + personsSurcharge + bobbleSurcharge;
+
+                return (
+                  <div key={idx} className="flex gap-3 items-start border rounded-xl p-3">
+                    <img src={item.image} alt={item.title} className="w-16 h-16 rounded object-cover" />
+                    <div className="flex-1">
+                      <div className="font-medium">{item.title}</div>
+
+                      {/* Szczegóły opcji */}
+                      <div className="text-xs text-slate-600">
+                        Rozmiar: {item.options.sizeCm} cm • Osoby: {personsCount} • Kiwająca głowa:{" "}
+                        {item.options.bobble ? `tak (x${personsCount})` : "nie"}
+                      </div>
+
+                      {/* Breakdown ceny jednostkowej */}
+                      <div className="mt-1 space-y-0.5 text-[11px] text-slate-500">
+                        <div>bazowa: {currency(basePrice)}</div>
+                        {sizeSurcharge > 0 && <div>rozmiar: +{currency(sizeSurcharge)}</div>}
+                        {personsSurcharge > 0 && (
+                          <div>
+                            osoby (premium): +{currency(personsSurcharge)}{" "}
+                            {personsCount > 3 && `(150 zł x ${personsCount - 3})`}
+                          </div>
+                        )}
+                        {bobbleSurcharge > 0 && (
+                          <div>
+                            kiwająca głowa: +{currency(bobbleSurcharge)}{" "}
+                            {(item.id === "standard" || isPremium)
+                              ? `(50 zł x ${personsCount})`
+                              : ""}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Ceny */}
+                      <div className="mt-1 text-sm font-semibold">
+                        {currency(unitPrice * item.qty)}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {currency(unitPrice)} / szt.
+                      </div>
                     </div>
-                    <div className="text-xs text-slate-500">
-                      {currency(item.price)} / szt.       {/* informacyjnie: cena za sztukę */}
+
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="icon" onClick={() => updateQty(idx, -1)}>
+                          <Minus className="w-4 h-4" />
+                        </Button>
+                        <span className="w-6 text-center text-sm">{item.qty}</span>
+                        <Button variant="outline" size="icon" onClick={() => updateQty(idx, 1)}>
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => removeFromCart(idx)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" onClick={() => updateQty(idx, -1)}><Minus className="w-4 h-4" /></Button>
-                    <span className="w-6 text-center text-sm">{item.qty}</span>
-                    <Button variant="outline" size="icon" onClick={() => updateQty(idx, 1)}><Plus className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => removeFromCart(idx)}><Trash2 className="w-4 h-4" /></Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+
               <div className="flex items-center justify-between font-semibold text-lg pt-2 border-t">
                 <span>{t.subtotal}</span>
                 <span>{currency(subtotal)}</span>
               </div>
-              <Button className={`w-full bg-gradient-to-r ${BRAND.primary} text-white`}>{t.checkout}</Button>
-              <Button variant="outline" className="w-full" onClick={() => setOpen(false)}>{t.continue_shopping}</Button>
+
+              {/* Przyciski akcji (z odstępem) */}
+              <div className="flex flex-col gap-3">
+                <Button
+                  className={`w-full bg-gradient-to-r ${BRAND.primary} text-white`}
+                  onClick={() => {
+                    setOpen(false);
+                    setTimeout(() => {
+                      document.getElementById("order")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }, 0);
+                  }}
+                >
+                  Składam bezpłatne zamówienie projektu
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    // TODO: podłącz płatność/checkout
+                    console.log("Zaakceptowałem projekt, kupuje");
+                  }}
+                >
+                  Zaakceptowałem projekt, kupuje
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -502,6 +884,7 @@ function Cart({ t, cart, subtotal, removeFromCart, updateQty, open, setOpen }) {
     </Sheet>
   );
 }
+
 
 function Footer() {
   return (
