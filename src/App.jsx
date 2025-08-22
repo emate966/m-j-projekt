@@ -7,10 +7,10 @@ import {
   Minus,
   Star,
   Sparkles,
-  Info,
   CheckCircle2,
   CreditCard,
   Image as ImageIcon,
+  ChevronDown,
 } from "lucide-react";
 
 import Button from "./components/ui/button.jsx";
@@ -20,14 +20,14 @@ import { Input } from "./components/ui/input.jsx";
 import { Textarea } from "./components/ui/textarea.jsx";
 import { Label } from "./components/ui/label.jsx";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./components/ui/sheet.jsx";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./components/ui/select.jsx";
+// import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./components/ui/select.jsx";
 
 // ==================================
 // CONFIG
 // ==================================
 const BRAND = {
   name: "TwojaPodobizna.pl",
-  tagline: "Twoja figurka z podobieństwem – unikatowy prezent",
+  tagline: "Figurka z podobieństwem – Pomysł na unikatowy prezent",
   phone: "+48 600 000 000",
   email: "kontakt@minity.pl",
   address: "ul. Przykładowa 1, 00-000 Warszawa",
@@ -38,8 +38,11 @@ const DEFAULT_IMAGES = [
   "https://placehold.co/600x800/png?text=Figurka+1",
   "https://placehold.co/600x800/png?text=Figurka+2",
   "https://placehold.co/600x800/png?text=Figurka+3",
-  "https://placehold.co/600x800/png?text=Figurka+4",
+  "https://placehold.co/1200x1400/png?text=Realizacja",
 ];
+
+// Główne zdjęcie hero (po prawej) – możesz podmienić na realną realizację
+const HERO_IMAGE = DEFAULT_IMAGES[3];
 
 const PRODUCTS = [
   {
@@ -149,7 +152,10 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-800">
       <Header t={t} onOpenCart={() => setCartOpen(true)} />
       <main className="max-w-6xl mx-auto px-4 md:px-6 lg:px-8">
+        {/* HERO: LEWY TEKST + PRAWA FOTKA REALIZACJI */}
         <Hero t={t} />
+
+        {/* SEK CJA PAKIETÓW CELowo niżej – duży odstęp */}
         <Offer t={t} onAdd={(item) => addToCart(item)} />
         <HowItWorks t={t} />
         <Gallery t={t} />
@@ -187,57 +193,207 @@ function Header({ t, onOpenCart }) {
 
 function Hero({ t }) {
   return (
-    <section className="py-12 md:py-16">
-      <motion.h1 className="text-3xl md:text-4xl font-bold">{BRAND.tagline}</motion.h1>
-      <p className="mt-4 text-lg text-slate-600">
-        Figurki tworzone na podstawie zdjęć ! Tworzymy figurkę całego ciała lub tylko głowę a ciało wybierasz Ty !
-      </p>
-      <a href="#offer">
-        <Button className={`mt-6 bg-gradient-to-r ${BRAND.primary} text-white`}>
-          {t.hero_cta}
-        </Button>
-      </a>
+    <section className="py-10 md:py-16 lg:py-20">
+      <div className="grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
+        {/* Lewa kolumna: nagłówek + opis */}
+        <div className="max-w-xl">
+       <motion.h1
+  initial={{ opacity: 0, y: 8 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 0.4 }}
+  className="text-3xl md:text-5xl font-bold tracking-tight"
+>
+  {BRAND.tagline}
+</motion.h1>
+
+<h2 className="mt-6 md:mt-8 text-xl md:text-2xl font-semibold">
+  Wyślij nam kilka zdjęć i gotowe!
+</h2>
+
+<p className="mt-3 md:mt-4 text-lg md:text-xl text-slate-600">
+  Stworzymy figurkę całego ciała lub podmienimy głowę z wybranym przez Ciebie modelem!
+</p>
+
+ <a href="#offer" className="group inline-flex items-center gap-3 mt-12 md:mt-16 ml-12 md:ml-24">
+   <span className="sr-only">Przewiń do sekcji ofert</span>
+   <span className="w-12 h-12 md:w-14 md:h-14 rounded-full border border-slate-300 flex items-center justify-center transition-transform group-hover:translate-y-1">
+<ChevronDown className="w-6 h-6 md:w-7 md:h-7" />
+</span>
+ <span className="text-slate-600 text-base md:text-lg">Przewiń w dół</span>
+ </a>
+
+
+
+</div>
+
+        {/* Prawa kolumna: zdjęcie realizacji */}
+        <div className="relative">
+          <div className="rounded-2xl overflow-hidden border bg-white shadow-sm">
+            <img
+              src={HERO_IMAGE}
+              alt="Przykładowa realizacja figurki – TwojaPodobizna.pl"
+              className="w-full h-[360px] md:h-[520px] object-cover"
+            />
+          </div>
+          <div className="absolute bottom-3 right-3 text-xs bg-white/80 backdrop-blur px-3 py-1.5 rounded-full border">
+            Realizacja klienta
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
 
 function Offer({ t, onAdd }) {
   return (
-    <section id="offer" className="py-10">
+    <section id="offer" className="pt-0 mt-10 md:mt-20 lg:mt-28 pb-10">
       <h2 className="text-2xl font-bold mb-6">{t.offer}</h2>
       <div className="grid md:grid-cols-3 gap-6">
         {PRODUCTS.map((p) => (
-          <Card key={p.id}>
-            <CardHeader>
-              <CardTitle>{p.name}</CardTitle>
-              <Badge><Star className="w-4 h-4" /> {p.rating}</Badge>
-            </CardHeader>
-            <CardContent>
-              <img src={p.image} alt={p.name} className="rounded-xl w-full h-56 object-cover mb-4" />
-              <ul className="text-sm text-slate-700 mb-4 list-disc pl-5">
-                {p.features.map((f, i) => <li key={i}>{f}</li>)}
-              </ul>
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className="text-2xl font-extrabold">{currency(p.price)}</div>
-                  <div className="text-xs line-through text-slate-400">{currency(p.oldPrice)}</div>
-                </div>
-                <Button
-                  onClick={() =>
-                    onAdd({ id: p.id, title: p.name, price: p.price, qty: 1, image: p.image })
-                  }
-                  className={`bg-gradient-to-r ${BRAND.primary} text-white`}
-                >
-                  {t.add_to_cart}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <ProductCard key={p.id} p={p} t={t} onAdd={onAdd} />
         ))}
       </div>
     </section>
   );
 }
+function ProductCard({ p, t, onAdd }) {
+  const isPremium = p.id === "premium";
+
+  // wybory klienta
+  const [sizeCm, setSizeCm] = useState("15");  // 15 / 18 / 23
+  const [persons, setPersons] = useState(3);   // premium: 3..10
+  const [bobble, setBobble] = useState(false); // Kiwająca głowa
+  const [qty, setQty] = useState(1);
+
+  // dopłaty
+  const sizeSurcharge = sizeCm === "18" ? 40 : sizeCm === "23" ? 80 : 0;
+  const basePrice = isPremium ? 550 : p.price;
+  const personsSurcharge = isPremium ? Math.max(0, persons - 3) * 150 : 0;
+  const bobbleSurcharge = bobble ? 50 : 0;
+
+  // ceny
+  const dynamicPrice = basePrice + sizeSurcharge + personsSurcharge + bobbleSurcharge; // za 1 szt.
+  const totalPrice = dynamicPrice * qty; // za pozycję (szt. × ilość)
+
+  return (
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>{p.name}</span>
+          <Badge className="flex items-center gap-1">
+            <Star className="w-4 h-4" /> {p.rating}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+
+  <CardContent className="flex h-full flex-col pb-5">
+        <img src={p.image} alt={p.name} className="rounded-xl w-full h-56 object-cover mb-4" />
+
+        {/* WYBÓR OPCJI */}
+        <div className="space-y-3 mb-4">
+          {/* Rozmiar – natywny select */}
+          <div>
+            <Label className="text-xs">{t.size}</Label>
+            <select
+              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+              value={sizeCm}
+              onChange={(e) => setSizeCm(e.target.value)}
+            >
+              <option value="15">15 cm (cena podstawowa)</option>
+              <option value="18">18 cm (+40 zł)</option>
+              <option value="23">23 cm (+80 zł)</option>
+            </select>
+          </div>
+
+          {/* Liczba osób – tylko Premium */}
+          {isPremium ? (
+            <div>
+              <Label className="text-xs">Liczba osób</Label>
+              <select
+                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                value={String(persons)}
+                onChange={(e) => setPersons(Number(e.target.value))}
+              >
+                {[3,4,5,6,7,8,9,10].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <div className="text-xs text-slate-500 mt-1">
+                3 osoby = 550 zł, każda następna +150 zł
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-slate-600">
+              Osoby: {p.id === "mini" ? "1" : "2"}
+            </div>
+          )}
+
+          {/* Kiwająca głowa */}
+          <label className="flex items-center gap-2 text-sm select-none">
+            <input
+              type="checkbox"
+              className="size-4 accent-blue-600"
+              checked={bobble}
+              onChange={(e) => setBobble(e.target.checked)}
+            />
+            <span>Kiwająca głowa (+50 zł)</span>
+          </label>
+
+          {/* Czas realizacji */}
+          <div className="text-sm text-slate-600">Czas realizacji: 3–5 dni roboczych</div>
+
+          {/* Ilość */}
+          <div className="flex items-center gap-2">
+            <Label className="text-xs">{t.qty}</Label>
+            <Button variant="outline" size="icon" onClick={() => setQty(Math.max(1, qty - 1))}>
+              <Minus className="w-4 h-4" />
+            </Button>
+            <span className="w-6 text-center text-sm">{qty}</span>
+            <Button variant="outline" size="icon" onClick={() => setQty(qty + 1)}>
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* CENA + DODAJ */}
+          <div className="mt-auto mb-2 flex items-end justify-between gap-3">
+          <div className="flex-1 min-w-0 space-y-1">
+            {/* łączna cena pozycji */}
+            <div className="text-2xl font-extrabold">{currency(totalPrice)}</div>
+            {/* cena jednostkowa */}
+            <div className="text-xs text-slate-500">{currency(dynamicPrice)} / szt.</div>
+
+            {!isPremium && p.oldPrice && (
+              <div className="text-xs line-through text-slate-400">{currency(p.oldPrice)}</div>
+            )}
+          </div>
+
+          <Button
+            className={`shrink-0 whitespace-nowrap h-10 px-4 bg-gradient-to-r ${BRAND.primary} text-white`}
+            onClick={() =>
+              onAdd({
+                id: p.id,
+                title: p.name,
+                price: dynamicPrice, // cena za sztukę
+                qty,
+                image: p.image,
+                options: {
+                  sizeCm,
+                  ...(isPremium ? { persons } : { persons: p.id === "mini" ? 1 : 2 }),
+                  bobble,
+                },
+              })
+            }
+          >
+            {t.add_to_cart}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
 
 function HowItWorks({ t }) {
   return (
@@ -318,7 +474,12 @@ function Cart({ t, cart, subtotal, removeFromCart, updateQty, open, setOpen }) {
                   <img src={item.image} alt={item.title} className="w-16 h-16 rounded object-cover" />
                   <div className="flex-1">
                     <div className="font-medium">{item.title}</div>
-                    <div className="text-sm font-semibold">{currency(item.price)}</div>
+                    <div className="text-sm font-semibold">
+                      {currency(item.price * item.qty)}   {/* cena pozycji */}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {currency(item.price)} / szt.       {/* informacyjnie: cena za sztukę */}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="icon" onClick={() => updateQty(idx, -1)}><Minus className="w-4 h-4" /></Button>
